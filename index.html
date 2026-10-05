@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Student Result Portal</title>
+<style>
+:root{--bg:#e8eef2;--paper:#fbfcfd;--ink:#16324a;--mute:#5d7385;--line:#c9d6df;--pass:#1f7a4d;--fail:#b3261e}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1b26;--paper:#17283a;--ink:#e3edf5;--mute:#93a9ba;--line:#2c4257;--pass:#58c98d;--fail:#ff8a80}}
+:root[data-theme="dark"]{--bg:#0f1b26;--paper:#17283a;--ink:#e3edf5;--mute:#93a9ba;--line:#2c4257;--pass:#58c98d;--fail:#ff8a80}
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+input{background:var(--paper)!important}
+.list{max-width:860px;margin:20px auto 0;overflow-x:auto}
+.list h2{margin:0 0 10px;font-size:1.2rem}
+.x{width:auto;margin:0;padding:3px 9px;font-size:.8rem;background:transparent;color:var(--fail);border:1px solid var(--line)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Georgia,"Times New Roman",serif;line-height:1.5;padding:24px 16px}
+.wrap{max-width:860px;margin:0 auto;display:grid;gap:20px;grid-template-columns:1fr 1.1fr}
+@media(max-width:720px){.wrap{grid-template-columns:1fr}}
+h1{font-size:1.7rem;margin:0 0 4px}
+.sub{color:var(--mute);margin:0 0 18px;font-family:system-ui,sans-serif;font-size:.9rem}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:20px}
+label{display:block;font-family:system-ui,sans-serif;font-size:.85rem;color:var(--mute);margin:12px 0 4px}
+input{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:4px;font-size:1rem;background:#fff;color:var(--ink)}
+input:focus,button:focus-visible{outline:2px solid var(--ink);outline-offset:1px}
+.row{display:grid;grid-template-columns:1fr 90px;gap:10px;align-items:end}
+button{margin-top:18px;width:100%;padding:11px;border:0;border-radius:4px;background:var(--ink);color:#fff;font-size:1rem;cursor:pointer}
+button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);margin-top:8px}
+.err{color:var(--fail);font-family:system-ui,sans-serif;font-size:.85rem;min-height:1.2em;margin-top:10px}
+.sheet{position:relative}
+.empty{color:var(--mute);font-style:italic}
+.who{display:flex;justify-content:space-between;flex-wrap:wrap;border-bottom:2px solid var(--ink);padding-bottom:8px;margin-bottom:10px}
+table{width:100%;border-collapse:collapse;font-family:system-ui,sans-serif;font-size:.92rem}
+th,td{text-align:left;padding:7px 4px;border-bottom:1px solid var(--line)}
+td.n,th.n{text-align:right}
+td.low{color:var(--fail);font-weight:600}
+.sum{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0}
+.sum div{border:1px solid var(--line);border-radius:4px;padding:8px;text-align:center}
+.sum b{display:block;font-size:1.4rem}
+.sum span{font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mute)}
+.stamp{display:inline-block;border:3px solid;border-radius:6px;padding:4px 16px;font-size:1.5rem;font-weight:700;letter-spacing:.12em;transform:rotate(-6deg);animation:thud .35s ease-out}
+.stamp.pass{color:var(--pass)}.stamp.fail{color:var(--fail)}
+@keyframes thud{from{transform:rotate(-6deg) scale(1.8);opacity:0}to{transform:rotate(-6deg) scale(1);opacity:1}}
+@media(prefers-reduced-motion:reduce){.stamp{animation:none}}
+@media print{body{background:#fff}.form{display:none}.wrap{display:block}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <section class="card form">
+    <h1>Student Result Portal</h1>
+    <p class="sub">Enter marks out of 100 for each subject.</p>
+    <label for="name">Student name</label>
+    <input id="name" placeholder="e.g. Riya Sharma">
+    <label for="roll">Roll number</label>
+    <input id="roll" placeholder="e.g. 21CSE042">
+    <div id="subjects"></div>
+    <div class="err" id="err" role="alert"></div>
+    <button id="go">Generate result</button>
+    <button id="reset" class="ghost">Clear form</button>
+  </section>
+
+  <section class="card sheet" aria-live="polite">
+    <div id="out"><p class="empty">The result will appear here after you generate it.</p></div>
+  </section>
+</div>
+
+<section class="card list form">
+  <h2>Saved results</h2>
+  <div id="list"></div>
+</section>
+
+<script>
+const SUBJECTS = ["Data Structures", "Operating Systems", "DBMS", "Computer Networks", "Web Technologies"];
+const PASS_MARK = 33;   // minimum marks needed in each subject
+
+const $ = id => document.getElementById(id);
+
+// Build one input per subject
+$("subjects").innerHTML = SUBJECTS.map((s, i) =>
+  `<label for="m${i}">${s}</label><input id="m${i}" type="number" min="0" max="100" inputmode="numeric" placeholder="0 – 100">`
+).join("");
+
+// Saved results (kept in this browser only)
+let records = [];
+try { records = JSON.parse(localStorage.getItem("results")) || []; } catch (e) { records = []; }
+function persist() { try { localStorage.setItem("results", JSON.stringify(records)); } catch (e) {} }
+
+function renderList() {
+  if (!records.length) { $("list").innerHTML = '<p class="empty">No results saved yet.</p>'; return; }
+  $("list").innerHTML = "<table><tr><th>Roll</th><th>Name</th><th class='n'>%</th><th class='n'>Grade</th><th class='n'>Result</th><th></th></tr>" +
+    records.map((r, i) => `<tr><td>${esc(r.roll)}</td><td>${esc(r.name)}</td><td class="n">${r.percent}</td><td class="n">${r.grade}</td><td class="n">${r.passed ? "Pass" : "Fail"}</td><td class="n"><button class="x" onclick="removeRec(${i})">Delete</button></td></tr>`).join("") + "</table>";
+}
+function removeRec(i) { records.splice(i, 1); persist(); renderList(); }
+
+function gradeFor(p) {
+  if (p >= 90) return "A+";
+  if (p >= 80) return "A";
+  if (p >= 70) return "B";
+  if (p >= 60) return "C";
+  if (p >= 50) return "D";
+  if (p >= PASS_MARK) return "E";
+  return "F";
+}
+
+function generate() {
+  const name = $("name").value.trim();
+  const roll = $("roll").value.trim();
+  const marks = SUBJECTS.map((_, i) => $("m" + i).value.trim());
+
+  if (!name || !roll) return $("err").textContent = "Enter the student name and roll number.";
+  if (marks.some(m => m === "" || isNaN(m) || m < 0 || m > 100))
+    return $("err").textContent = "Marks must be numbers between 0 and 100 for every subject.";
+  $("err").textContent = "";
+
+  const nums = marks.map(Number);
+  const total = nums.reduce((a, b) => a + b, 0);
+  const percent = total / SUBJECTS.length;
+  const failedIn = SUBJECTS.filter((_, i) => nums[i] < PASS_MARK);
+  const passed = failedIn.length === 0;
+
+  // Save (a repeated roll number updates the old entry)
+  const rec = { name, roll, percent: +percent.toFixed(2), grade: passed ? gradeFor(percent) : "F", passed };
+  const at = records.findIndex(r => r.roll === roll);
+  if (at >= 0) records[at] = rec; else records.push(rec);
+  persist();
+  renderList();
+
+  const rows = SUBJECTS.map((s, i) =>
+    `<tr><td>${s}</td><td class="n ${nums[i] < PASS_MARK ? "low" : ""}">${nums[i]}</td><td class="n">${nums[i] >= PASS_MARK ? "Pass" : "Fail"}</td></tr>`
+  ).join("");
+
+  $("out").innerHTML = `
+    <div class="who"><div><b>${esc(name)}</b></div><div>Roll no. ${esc(roll)}</div></div>
+    <table>
+      <tr><th>Subject</th><th class="n">Marks</th><th class="n">Result</th></tr>
+      ${rows}
+    </table>
+    <div class="sum">
+      <div><b>${total}/${SUBJECTS.length * 100}</b><span>Total</span></div>
+      <div><b>${percent.toFixed(2)}%</b><span>Percentage</span></div>
+      <div><b>${passed ? gradeFor(percent) : "F"}</b><span>Grade</span></div>
+    </div>
+    <div style="text-align:center;margin-top:8px">
+      <span class="stamp ${passed ? "pass" : "fail"}">${passed ? "PASS" : "FAIL"}</span>
+      ${passed ? "" : `<p class="sub">Needs ${PASS_MARK}+ in: ${failedIn.join(", ")}</p>`}
+    </div>
+    <button class="ghost" onclick="window.print()">Print result</button>`;
+}
+
+// Stop typed names from being read as HTML
+function esc(t) {
+  return t.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+function resetAll() {
+  document.querySelectorAll("input").forEach(i => i.value = "");
+  $("err").textContent = "";
+  $("out").innerHTML = '<p class="empty">The result will appear here after you generate it.</p>';
+}
+
+renderList();
+$("go").addEventListener("click", generate);
+$("reset").addEventListener("click", resetAll);
+</script>
+</body>
+</html>
